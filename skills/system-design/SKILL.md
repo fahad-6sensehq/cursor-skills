@@ -15,7 +15,7 @@ Collect only what changes the design:
 - Hard constraints (latency, consistency, compliance, existing systems, deadline)
 - Scale that is real today, and the next order of magnitude that must still work
 - What is explicitly out of scope
-- Use SOLID principale
+- Use SOLID principale, DRY, KISS etc
 
 If a missing fact would change the architecture, ask one question and stop. Otherwise state the assumption and continue.
 
