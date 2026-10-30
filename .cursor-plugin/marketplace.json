@@ -1,0 +1,17 @@
+{
+  "name": "cursor-skills",
+  "owner": {
+    "name": "Fahad Hossain",
+    "email": "fahad@6sensehq.com"
+  },
+  "metadata": {
+    "description": "Engineering workflow skills for Jira task breakdown, pull requests, code review, and system design."
+  },
+  "plugins": [
+    {
+      "name": "cursor-skills",
+      "source": ".",
+      "description": "Engineering workflow skills for Jira task breakdown, pull requests, code review, and system design."
+    }
+  ]
+}

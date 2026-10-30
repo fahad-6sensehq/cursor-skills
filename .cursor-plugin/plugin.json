@@ -1,0 +1,19 @@
+{
+  "name": "cursor-skills",
+  "displayName": "Cursor Skills",
+  "description": "Engineering workflow skills for Jira task breakdown, pull requests, code review, and system design.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Fahad Hossain",
+    "email": "fahad@6sensehq.com"
+  },
+  "license": "MIT",
+  "keywords": [
+    "jira",
+    "pull-request",
+    "code-review",
+    "system-design"
+  ],
+  "category": "productivity",
+  "skills": "./skills/"
+}
