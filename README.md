@@ -42,11 +42,9 @@ npx skills add fahad-6sensehq/cursor-skills -g -a cursor -y
 
 Skills land in `~/.agents/skills/`. This command does not install the auto-update hook below. Each person adds that hook once.
 
-To list this repo in the Cursor Marketplace, submit the public repository at [cursor.com/marketplace/publish](https://cursor.com/marketplace/publish).
-
 ## Auto-update hook
 
-The hook checks GitHub and copies newer skills into the global install. It runs at most once every 24 hours, in the background, on three events:
+The hook checks GitHub and copies newer skills into the global install. It also reports the signed-in Cursor user's email to the skills usage endpoint (see [Usage tracking](#usage-tracking)). It runs at most once every 24 hours, in the background, on three events:
 
 | Hook | When it runs |
 | --- | --- |
@@ -59,6 +57,29 @@ The prompt is not blocked. The chat that triggers the update still has the skill
 Log file: `~/.cursor/hooks/update-skills.log`
 
 After saving `hooks.json`, reload the window (**Developer: Reload Window**).
+
+### Usage tracking
+
+Cursor passes the signed-in user's email to every hook as `user_email` in the JSON on stdin. Once per 24-hour run, the hook sends it to the endpoint below, so we can see who has the skills installed:
+
+```bash
+curl --request POST \
+  --url https://example.com/skill \
+  --header 'content-type: application/json' \
+  --data '{"email":"user@example.com","time":"2026-11-02T07:00:00Z"}'
+```
+
+| Field | Value |
+| --- | --- |
+| `email` | `user_email` from the hook input |
+| `time` | Current time in UTC, ISO 8601 |
+
+Notes:
+
+- If the user is not signed in to Cursor, `user_email` is empty and no request is sent.
+- The request runs in the background with a 10-second timeout. A failure never blocks Cursor and is written to the log file.
+- Replace `https://example.com/skill` with your endpoint in the script you install.
+- Anyone who installs this hook is sending their email to that endpoint. Tell your users.
 
 ### macOS and Linux
 
@@ -89,7 +110,9 @@ User hooks live in the home directory and run from `~/.cursor/`.
 #!/bin/bash
 input=$(cat)
 event=$(printf '%s' "$input" | sed -n 's/.*"hook_event_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+email=$(printf '%s' "$input" | sed -n 's/.*"user_email"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 
+api_url="https://ops4-api.6sensehq.com/users/last-skill-usage"
 log="$HOME/.cursor/hooks/update-skills.log"
 stamp="$HOME/.cursor/hooks/.skills-update-stamp"
 lockdir="$HOME/.cursor/hooks/.skills-update-lock"
@@ -104,7 +127,7 @@ finish() {
   exit 0
 }
 
-if [ -f "$stamp" ] && [ $((now - $(cat "$stamp"))) -lt 86400 ]; then
+if [ -f "$stamp" ] && [ $((now - $(cat "$stamp"))) -lt 43200 ]; then
   finish
 fi
 
@@ -124,6 +147,17 @@ fnm_bin="$HOME/.local/share/fnm/aliases/default/bin"
   export PATH="${node_bin:+$node_bin:}${fnm_bin:+$fnm_bin:}/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
   {
     echo "---- $(date) ----"
+
+    if [ -n "$email" ]; then
+      curl --silent --show-error --max-time 10 --request POST \
+        --url "$api_url" \
+        --header 'content-type: application/json' \
+        --data "{\"email\":\"$email\",\"time\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}"
+      echo "ping exit $?"
+    else
+      echo "ping skipped: no user_email"
+    fi
+
     npx --yes skills update -g -y
     echo "exit $?"
   } >> "$log" 2>&1
@@ -139,7 +173,7 @@ Make it executable:
 chmod +x ~/.cursor/hooks/update-skills.sh
 ```
 
-On macOS, Node installed with nvm or Homebrew is on that `PATH`. On Linux, the script also checks nvm and fnm. A system Node in `/usr/local/bin` or `/usr/bin` works with no extra path.
+On macOS, Node installed with nvm or Homebrew is on that `PATH`. On Linux, the script also checks nvm and fnm. A system Node in `/usr/local/bin` or `/usr/bin` works with no extra path. `curl` must be installed (it is by default on macOS and most Linux distributions).
 
 ### Windows
 
@@ -182,7 +216,12 @@ $event = ""
 if ($raw -match '"hook_event_name"\s*:\s*"([^"]+)"') {
   $event = $Matches[1]
 }
+$email = ""
+if ($raw -match '"user_email"\s*:\s*"([^"]+)"') {
+  $email = $Matches[1]
+}
 
+$apiUrl = "https://example.com/skill"
 $hookDir = Join-Path $env:USERPROFILE ".cursor\hooks"
 $log = Join-Path $hookDir "update-skills.log"
 $stamp = Join-Path $hookDir ".skills-update-stamp"
@@ -213,15 +252,38 @@ $nodeDirs = @(
   "$env:LOCALAPPDATA\fnm",
   "$env:APPDATA\nvm"
 ) | Where-Object { $_ -and (Test-Path $_) }
-$pathPrefix = ($nodeDirs -join ";")
 
-$runner = @"
-`$env:PATH = '$pathPrefix;' + `$env:PATH
-'---- ' + (Get-Date) + ' ----' | Out-File -Append -Encoding utf8 '$log'
-npx --yes skills update -g -y *>> '$log'
-'exit ' + `$LASTEXITCODE | Out-File -Append -Encoding utf8 '$log'
-Remove-Item -Recurse -Force '$lock' -ErrorAction SilentlyContinue
-"@
+# Pass values to the background process through environment variables.
+$env:SKILLS_PATH_PREFIX = ($nodeDirs -join ";")
+$env:SKILLS_LOG = $log
+$env:SKILLS_LOCK = $lock
+$env:SKILLS_API_URL = $apiUrl
+$env:SKILLS_USER_EMAIL = $email
+
+$runner = @'
+$env:PATH = $env:SKILLS_PATH_PREFIX + ';' + $env:PATH
+'---- ' + (Get-Date) + ' ----' | Out-File -Append -Encoding utf8 $env:SKILLS_LOG
+
+if ($env:SKILLS_USER_EMAIL) {
+  try {
+    $body = @{
+      email = $env:SKILLS_USER_EMAIL
+      time  = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    } | ConvertTo-Json -Compress
+    Invoke-RestMethod -Method Post -Uri $env:SKILLS_API_URL `
+      -ContentType 'application/json' -Body $body -TimeoutSec 10 | Out-Null
+    'ping ok' | Out-File -Append -Encoding utf8 $env:SKILLS_LOG
+  } catch {
+    ('ping failed: ' + $_.Exception.Message) | Out-File -Append -Encoding utf8 $env:SKILLS_LOG
+  }
+} else {
+  'ping skipped: no user_email' | Out-File -Append -Encoding utf8 $env:SKILLS_LOG
+}
+
+npx --yes skills update -g -y *>> $env:SKILLS_LOG
+'exit ' + $LASTEXITCODE | Out-File -Append -Encoding utf8 $env:SKILLS_LOG
+Remove-Item -Recurse -Force $env:SKILLS_LOCK -ErrorAction SilentlyContinue
+'@
 
 Start-Process -WindowStyle Hidden -FilePath "powershell" -ArgumentList @(
   "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $runner
