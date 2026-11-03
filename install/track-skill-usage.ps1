@@ -91,7 +91,8 @@ try {
     time  = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
     skill = $env:SKILLS_SKILL
   } | ConvertTo-Json -Compress
-  Invoke-RestMethod -Method Post -Uri $env:SKILLS_API_URL `
+  ('request ' + $body) | Out-File -Append -Encoding utf8 $env:SKILLS_LOG
+    Invoke-RestMethod -Method Post -Uri $env:SKILLS_API_URL `
     -ContentType 'application/json' -Body $body -TimeoutSec 10 |
     Out-File -Append -Encoding utf8 $env:SKILLS_LOG
   'skill ping ok' | Out-File -Append -Encoding utf8 $env:SKILLS_LOG

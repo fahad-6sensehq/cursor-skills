@@ -86,7 +86,7 @@ After the files are in place, reload the window (**Developer: Reload Window**).
 
 ### macOS and Linux
 
-This creates `~/.cursor/hooks`, then downloads `hooks.json` and `track-skill-usage.sh` into place. `python3` and `curl` must be installed.
+This creates `~/.cursor/hooks`, then downloads `hooks.json` and `track-skill-usage.sh` into place. `curl` must be installed. The script reads the hook payload with `python3`, or with `node` when `python3` is missing.
 
 ```bash
 mkdir -p ~/.cursor/hooks
