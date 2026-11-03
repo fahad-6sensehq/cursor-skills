@@ -21,6 +21,8 @@ cursor-skills/
 ├── install/
 │   ├── hooks.json
 │   ├── hooks.windows.json
+│   ├── update-skills.sh
+│   ├── update-skills.ps1
 │   ├── track-skill-usage.sh
 │   └── track-skill-usage.ps1
 ├── skills/
@@ -35,7 +37,7 @@ cursor-skills/
 └── README.md
 ```
 
-`.cursor-plugin/marketplace.json` indexes this repo as one plugin. `.cursor-plugin/plugin.json` is that plugin. Skills are discovered from `skills/`. The `install/` files are the usage hook. Cursor does not load them from this repo.
+`.cursor-plugin/marketplace.json` indexes this repo as one plugin. `.cursor-plugin/plugin.json` is that plugin. Skills are discovered from `skills/`. The `install/` files are the update hook and the usage hook. Cursor does not load them from this repo.
 
 ## Install
 
@@ -45,11 +47,23 @@ Install the skills globally so every project on that machine can use them. Requi
 npx skills add fahad-6sensehq/cursor-skills -g -a cursor -y
 ```
 
-Skills land in `~/.agents/skills/`. This command does not install the usage hook below.
+Skills land in `~/.agents/skills/`. This command does not install the hooks below.
+
+## Auto-update
+
+`update-skills` checks GitHub and copies newer skills into the global install. It runs at most once every 24 hours, in the background. It does not call the usage API.
+
+| Hook | When it runs |
+| --- | --- |
+| `workspaceOpen` | Cursor opens a workspace. Covers people who quit the app. |
+| `sessionStart` | A new agent chat starts. Covers people who leave Cursor open and start a new chat. |
+| `beforeSubmitPrompt` | The user sends a prompt. Covers people who leave Cursor open and keep using an existing chat. |
+
+The prompt is not blocked. The chat that triggers the update still has the skill text it loaded at the start. A new chat uses the updated files. The result is written to `~/.cursor/hooks/update-skills.log`. `npx skills update` does not update the hook scripts.
 
 ## Usage tracking
 
-`track-skill-usage` is the only hook, and it is the only script that calls the API. It reports a skill when someone uses it. It does not report that the skills are merely installed.
+`track-skill-usage` is the only script that calls the API. It reports a skill when someone uses it. It does not report that the skills are merely installed.
 
 | Hook | When it runs |
 | --- | --- |
@@ -76,7 +90,7 @@ curl --request POST \
 Notes:
 
 - If the user is not signed in to Cursor, `user_email` is empty and no request is sent.
-- A command or file read is ignored unless that skill is installed from `fahad-6sensehq/cursor-skills`. After `npx skills update -g` installs a new skill, the next `/skill-name` is reported. The hook script does not need an edit. Skills from other repos are ignored.
+- A command or file read is ignored unless that skill is installed from `fahad-6sensehq/cursor-skills`. After `update-skills` installs a new skill, the next `/skill-name` is reported. The hook script does not need an edit. Skills from other repos are ignored.
 - The hook does not send the prompt or the file contents.
 - The request runs in the background with a 10-second timeout. A failure never blocks Cursor. The result is written to `~/.cursor/hooks/track-skill-usage.log`.
 - The endpoint has to store `skill`. A handler that only saves the last timestamp will return success and still not show which skill was used.
@@ -92,8 +106,9 @@ This creates `~/.cursor/hooks`, then downloads `hooks.json` and `track-skill-usa
 mkdir -p ~/.cursor/hooks
 base=https://raw.githubusercontent.com/fahad-6sensehq/cursor-skills/main/install
 curl -fsSL "$base/hooks.json" -o ~/.cursor/hooks.json
+curl -fsSL "$base/update-skills.sh" -o ~/.cursor/hooks/update-skills.sh
 curl -fsSL "$base/track-skill-usage.sh" -o ~/.cursor/hooks/track-skill-usage.sh
-chmod +x ~/.cursor/hooks/track-skill-usage.sh
+chmod +x ~/.cursor/hooks/update-skills.sh ~/.cursor/hooks/track-skill-usage.sh
 ```
 
 From a checkout of this repo, copy the same files instead of downloading them:
@@ -101,17 +116,25 @@ From a checkout of this repo, copy the same files instead of downloading them:
 ```bash
 mkdir -p ~/.cursor/hooks
 cp install/hooks.json ~/.cursor/hooks.json
+cp install/update-skills.sh ~/.cursor/hooks/update-skills.sh
 cp install/track-skill-usage.sh ~/.cursor/hooks/track-skill-usage.sh
-chmod +x ~/.cursor/hooks/track-skill-usage.sh
+chmod +x ~/.cursor/hooks/update-skills.sh ~/.cursor/hooks/track-skill-usage.sh
 ```
 
-`~/.cursor/hooks.json` only runs the usage script:
+`~/.cursor/hooks.json` runs the update script and the usage script:
 
 ```json
 {
   "version": 1,
   "hooks": {
+    "workspaceOpen": [
+      { "command": "./hooks/update-skills.sh", "timeout": 15 }
+    ],
+    "sessionStart": [
+      { "command": "./hooks/update-skills.sh", "timeout": 15 }
+    ],
     "beforeSubmitPrompt": [
+      { "command": "./hooks/update-skills.sh", "timeout": 15 },
       { "command": "./hooks/track-skill-usage.sh", "timeout": 10 }
     ],
     "beforeReadFile": [
@@ -131,6 +154,7 @@ $hooks = Join-Path $dest "hooks"
 New-Item -ItemType Directory -Force -Path $hooks | Out-Null
 $base = "https://raw.githubusercontent.com/fahad-6sensehq/cursor-skills/main/install"
 Invoke-WebRequest "$base/hooks.windows.json" -OutFile (Join-Path $dest "hooks.json")
+Invoke-WebRequest "$base/update-skills.ps1" -OutFile (Join-Path $hooks "update-skills.ps1")
 Invoke-WebRequest "$base/track-skill-usage.ps1" -OutFile (Join-Path $hooks "track-skill-usage.ps1")
 ```
 
@@ -141,7 +165,8 @@ $dest = Join-Path $env:USERPROFILE ".cursor"
 $hooks = Join-Path $dest "hooks"
 New-Item -ItemType Directory -Force -Path $hooks | Out-Null
 Copy-Item install\hooks.windows.json (Join-Path $dest "hooks.json") -Force
+Copy-Item install\update-skills.ps1 (Join-Path $hooks "update-skills.ps1") -Force
 Copy-Item install\track-skill-usage.ps1 (Join-Path $hooks "track-skill-usage.ps1") -Force
 ```
 
-`hooks.windows.json` is the same hook list as macOS. The command is `powershell -File ./hooks/track-skill-usage.ps1`.
+`hooks.windows.json` is the same hook list as macOS. The commands are `powershell -File ./hooks/update-skills.ps1` and `powershell -File ./hooks/track-skill-usage.ps1`.

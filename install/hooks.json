@@ -1,7 +1,23 @@
 {
   "version": 1,
   "hooks": {
+    "workspaceOpen": [
+      {
+        "command": "./hooks/update-skills.sh",
+        "timeout": 15
+      }
+    ],
+    "sessionStart": [
+      {
+        "command": "./hooks/update-skills.sh",
+        "timeout": 15
+      }
+    ],
     "beforeSubmitPrompt": [
+      {
+        "command": "./hooks/update-skills.sh",
+        "timeout": 15
+      },
       {
         "command": "./hooks/track-skill-usage.sh",
         "timeout": 10
