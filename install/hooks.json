@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeSubmitPrompt": [
+      {
+        "command": "./hooks/track-skill-usage.sh",
+        "timeout": 10
+      }
+    ],
+    "beforeReadFile": [
+      {
+        "command": "./hooks/track-skill-usage.sh",
+        "timeout": 10,
+        "matcher": "Read"
+      }
+    ]
+  }
+}
